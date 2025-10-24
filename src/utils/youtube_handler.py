@@ -31,6 +31,16 @@ class YouTubeHandler:
             'source_address': '0.0.0.0',  # Bind a IPv4
             'extract_flat': False,  # Extraer info completa
             'age_limit': None,
+            # Headers para simular navegador real
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            },
         }
 
         # Configurar cookies para evitar bloqueos de YouTube
@@ -141,7 +151,11 @@ class YouTubeHandler:
             tmp_cookies_path = '/tmp/youtube_cookies.txt'
             try:
                 shutil.copy2(cookies_path, tmp_cookies_path)
+                # Asegurar permisos de lectura/escritura
+                os.chmod(tmp_cookies_path, 0o600)
                 logger.info(f'📋 Cookies copiadas de {cookies_path} a {tmp_cookies_path} (ubicación escribible)')
+                # Validar formato del archivo
+                self._validate_cookies_file(tmp_cookies_path)
                 return tmp_cookies_path
             except Exception as e:
                 logger.warning(f'⚠️  No se pudo copiar cookies a /tmp/: {e}')
@@ -168,6 +182,59 @@ class YouTubeHandler:
                 logger.error(f'❌ Error copiando cookies a /tmp/: {copy_error}')
                 logger.error(f'⚠️  Usando archivo original (puede no funcionar)')
                 return cookies_path
+
+    def _validate_cookies_file(self, cookies_path: str) -> bool:
+        """
+        Valida que el archivo de cookies tenga formato correcto de Netscape.
+
+        Args:
+            cookies_path: Ruta del archivo de cookies
+
+        Returns:
+            bool: True si es válido, False si no
+        """
+        try:
+            with open(cookies_path, 'r') as f:
+                lines = f.readlines()
+
+            # Verificar header de Netscape
+            if not lines or '# Netscape HTTP Cookie File' not in lines[0]:
+                logger.warning('⚠️  Archivo de cookies no tiene header de Netscape')
+                logger.warning('⚠️  Formato esperado: # Netscape HTTP Cookie File')
+                return False
+
+            # Contar cookies válidas de YouTube
+            youtube_cookies = 0
+            required_cookies = ['SAPISID', 'SSID', 'SID']
+            found_cookies = set()
+
+            for line in lines:
+                # Saltar comentarios y líneas vacías
+                if line.startswith('#') or not line.strip():
+                    continue
+
+                # Las cookies Netscape tienen 7 campos separados por tabs
+                parts = line.strip().split('\t')
+                if len(parts) >= 6:
+                    domain, _, path, secure, expiry, name, value = parts + [''] * (7 - len(parts))
+                    if 'youtube.com' in domain:
+                        youtube_cookies += 1
+                        if name in required_cookies:
+                            found_cookies.add(name)
+
+            logger.info(f'✓ Archivo de cookies válido: {youtube_cookies} cookies de YouTube encontradas')
+
+            if not found_cookies:
+                logger.warning('⚠️  No se encontraron cookies de autenticación importantes')
+                logger.warning('⚠️  Asegúrate de estar autenticado en YouTube al exportar cookies')
+            else:
+                logger.info(f'✓ Cookies de autenticación encontradas: {", ".join(found_cookies)}')
+
+            return youtube_cookies > 0
+
+        except Exception as e:
+            logger.error(f'❌ Error validando archivo de cookies: {e}')
+            return False
 
     async def extract_info(self, url: str) -> Optional[Dict]:
         """
