@@ -45,7 +45,8 @@ class MusicBot(commands.Bot):
         self.initial_extensions = [
             'src.cogs.music',
             'src.cogs.playlist',
-            'src.cogs.admin'
+            'src.cogs.admin',
+            'src.cogs.radio'
         ]
 
     async def setup_hook(self):

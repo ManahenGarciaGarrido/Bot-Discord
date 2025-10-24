@@ -42,7 +42,8 @@ class Music(commands.Cog):
                 'queue': QueueManager(max_size=Settings.MAX_QUEUE_SIZE),
                 'current_song': None,
                 'volume': Settings.DEFAULT_VOLUME / 100,
-                'last_channel': None
+                'last_channel': None,
+                'auto_shuffle': True  # Auto-shuffle para playlists
             }
         return self.guild_states[guild_id]
 
@@ -137,6 +138,11 @@ class Music(commands.Cog):
                 else:
                     break  # Cola llena
 
+            # Auto-shuffle para playlists
+            if added_count > 1 and state.get('auto_shuffle', True):
+                state['queue'].shuffle()
+                logger.info(f'Auto-shuffled playlist with {added_count} songs')
+
             # Si no hay nada reproduciéndose, empezar
             if not state['voice_client'].is_playing() and not state['voice_client'].is_paused():
                 await self._play_next(ctx.guild.id)
@@ -150,9 +156,10 @@ class Music(commands.Cog):
                     embed.set_thumbnail(url=songs[0].thumbnail)
                     await ctx.send(embed=embed)
                 else:
+                    shuffle_text = " (mezcladas aleatoriamente)" if state.get('auto_shuffle', True) else ""
                     await ctx.send(embed=create_success_embed(
                         "Añadido a la cola",
-                        f"{added_count} canciones añadidas a la cola."
+                        f"{added_count} canciones añadidas a la cola{shuffle_text}."
                     ))
 
     async def _handle_youtube_url(self, url, requester):
@@ -536,6 +543,36 @@ class Music(commands.Cog):
         """Ver latencia del bot"""
         latency = round(self.bot.latency * 1000)
         await ctx.send(embed=create_success_embed("Pong!", f"🏓 Latencia: {latency}ms"))
+
+    @commands.command(name='autoshuffle')
+    async def autoshuffle(self, ctx, enabled: bool = None):
+        """
+        Activar/desactivar auto-shuffle para playlists
+        Cuando está activo, las playlists se mezclan automáticamente
+
+        Uso:
+            !autoshuffle        - Ver estado actual
+            !autoshuffle on     - Activar
+            !autoshuffle off    - Desactivar
+        """
+        state = self.get_guild_state(ctx.guild.id)
+
+        if enabled is None:
+            # Mostrar estado actual
+            current = state.get('auto_shuffle', True)
+            status = "✅ Activado" if current else "❌ Desactivado"
+            await ctx.send(embed=create_success_embed(
+                "Auto-Shuffle",
+                f"Estado actual: {status}\n\nLas playlists {'se mezclarán' if current else 'NO se mezclarán'} automáticamente al añadirlas."
+            ))
+        else:
+            # Cambiar estado
+            state['auto_shuffle'] = enabled
+            status = "✅ Activado" if enabled else "❌ Desactivado"
+            await ctx.send(embed=create_success_embed(
+                "Auto-Shuffle Configurado",
+                f"{status}\n\nLas playlists ahora {'se mezclarán' if enabled else 'NO se mezclarán'} automáticamente."
+            ))
 
 
 async def setup(bot):
