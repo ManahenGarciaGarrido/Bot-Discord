@@ -7,6 +7,7 @@ import asyncio
 from typing import Dict, List, Optional
 import logging
 import os
+import shutil
 
 
 logger = logging.getLogger('MusicBot.YouTube')
@@ -69,8 +70,10 @@ class YouTubeHandler:
         cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
         if cookies_file:
             if os.path.exists(cookies_file):
-                logger.info(f'✅ Usando cookies desde archivo: {cookies_file}')
-                cookies_opts['cookiefile'] = cookies_file
+                # Copiar archivo a ubicación escribible si está en sistema read-only
+                final_cookies_path = self._ensure_writable_cookies(cookies_file)
+                logger.info(f'✅ Usando cookies desde archivo: {final_cookies_path}')
+                cookies_opts['cookiefile'] = final_cookies_path
                 return cookies_opts
             else:
                 logger.error(f'❌ Archivo de cookies no encontrado: {cookies_file}')
@@ -113,6 +116,58 @@ class YouTubeHandler:
         logger.error('=' * 70)
 
         return cookies_opts
+
+    def _ensure_writable_cookies(self, cookies_path: str) -> str:
+        """
+        Asegura que el archivo de cookies esté en una ubicación escribible.
+
+        En plataformas como Render, los Secret Files se montan en /etc/secrets/
+        que es read-only. yt-dlp necesita escribir en el archivo de cookies,
+        así que lo copiamos a /tmp/ que es escribible.
+
+        Args:
+            cookies_path: Ruta original del archivo de cookies
+
+        Returns:
+            str: Ruta del archivo de cookies escribible
+        """
+        # Si el archivo está en una ubicación conocida como read-only, copiarlo
+        readonly_paths = ['/etc/secrets/', '/run/secrets/']
+
+        is_readonly = any(cookies_path.startswith(path) for path in readonly_paths)
+
+        if is_readonly:
+            # Copiar a /tmp/ que es escribible
+            tmp_cookies_path = '/tmp/youtube_cookies.txt'
+            try:
+                shutil.copy2(cookies_path, tmp_cookies_path)
+                logger.info(f'📋 Cookies copiadas de {cookies_path} a {tmp_cookies_path} (ubicación escribible)')
+                return tmp_cookies_path
+            except Exception as e:
+                logger.warning(f'⚠️  No se pudo copiar cookies a /tmp/: {e}')
+                logger.warning(f'⚠️  Intentando usar archivo original (puede fallar si es read-only)')
+                return cookies_path
+
+        # Si no está en ubicación read-only, verificar si es escribible
+        try:
+            # Intentar abrir en modo append para verificar permisos de escritura
+            with open(cookies_path, 'a'):
+                pass
+            # Si funciona, el archivo es escribible
+            logger.info(f'✓ Archivo de cookies es escribible: {cookies_path}')
+            return cookies_path
+        except (PermissionError, OSError) as e:
+            # El archivo no es escribible, copiar a /tmp/
+            logger.warning(f'⚠️  Archivo de cookies no es escribible: {e}')
+            tmp_cookies_path = '/tmp/youtube_cookies.txt'
+            try:
+                shutil.copy2(cookies_path, tmp_cookies_path)
+                logger.info(f'📋 Cookies copiadas a {tmp_cookies_path} (ubicación escribible)')
+                return tmp_cookies_path
+            except Exception as copy_error:
+                logger.error(f'❌ Error copiando cookies a /tmp/: {copy_error}')
+                logger.error(f'⚠️  Usando archivo original (puede no funcionar)')
+                return cookies_path
 
     async def extract_info(self, url: str) -> Optional[Dict]:
         """
