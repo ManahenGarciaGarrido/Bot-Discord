@@ -79,6 +79,8 @@ El script generará un archivo `cookies.txt` en el directorio actual.
    - Key: `YOUTUBE_COOKIES_FILE`
    - Value: `/etc/secrets/cookies.txt`
 
+**Nota:** Render monta los Secret Files como read-only. El bot **automáticamente** copia el archivo a `/tmp/` (escribible) para que funcione correctamente. No necesitas hacer nada adicional.
+
 **Opción B: Subir al repositorio (solo si es privado)**
 ```bash
 # En tu PC local
@@ -176,6 +178,31 @@ El bot mostrará un mensaje de error largo explicando qué hacer.
 2. Sube el `cookies.txt` generado a tu servidor
 3. Configura `YOUTUBE_COOKIES_FILE=/app/cookies.txt`
 4. Reinicia el bot
+
+---
+
+### ❌ Error: "[Errno 30] Read-only file system"
+
+```
+ERROR: [Errno 30] Read-only file system: '/etc/secrets/cookies.txt'
+```
+
+**Causa:** En Render, los Secret Files se montan como **read-only**. yt-dlp necesita escribir en el archivo de cookies para actualizarlos.
+
+**Solución:** ✅ **El bot lo soluciona AUTOMÁTICAMENTE**
+
+El bot detecta automáticamente si el archivo de cookies está en una ubicación read-only (como `/etc/secrets/`) y **copia el archivo a `/tmp/`** que es escribible.
+
+**Verificación en los logs:**
+```
+📋 Cookies copiadas de /etc/secrets/cookies.txt a /tmp/youtube_cookies.txt (ubicación escribible)
+✅ Usando cookies desde archivo: /tmp/youtube_cookies.txt
+```
+
+**No necesitas hacer nada** - el bot maneja esto automáticamente. Solo asegúrate de que:
+1. El archivo cookies.txt está subido como Secret File en Render
+2. La variable `YOUTUBE_COOKIES_FILE=/etc/secrets/cookies.txt` está configurada
+3. **NO** tengas `COOKIES_BROWSER` configurado
 
 ---
 
