@@ -39,3 +39,5 @@ downloads/
 *.m4a
 *.webm
 *.opus
+
+.venv
