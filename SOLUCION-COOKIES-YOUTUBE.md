@@ -4,298 +4,344 @@
 
 YouTube está bloqueando las requests del bot con este error:
 ```
+ERROR: could not find chrome cookies database in "/root/.config/google-chrome"
 ERROR: Sign in to confirm you're not a bot.
-Use --cookies-from-browser or --cookies for the authentication.
 ```
 
-## ✅ Solución Implementada
-
-El bot ahora usa **automáticamente las cookies de tu navegador** donde estás autenticado en YouTube.
+**Causa del error:**
+El bot está corriendo en un servidor (Railway, Render, VPS, etc.) que **NO tiene navegadores instalados**. No puede leer las cookies de Chrome/Edge/Firefox porque esos navegadores no existen en el servidor.
 
 ---
 
-## 🚀 Configuración Rápida (2 minutos)
+## 🎯 Solución Correcta Según tu Caso
 
-### **Opción 1: Usar Navegador Automáticamente (RECOMENDADO)**
+### 📍 **¿Dónde corre tu bot?**
 
-El bot intentará usar cookies de Chrome por defecto. Si usas otro navegador, configúralo:
+#### **A) Bot en SERVIDOR (Railway, Render, Docker, VPS)**
+**→ Usa: Archivo de cookies (cookies.txt)**
 
-**En tu archivo `.env`, añade:**
-```env
-COOKIES_BROWSER=chrome    # Para Chrome
-# O cualquiera de estos:
-# COOKIES_BROWSER=firefox
-# COOKIES_BROWSER=edge
-# COOKIES_BROWSER=brave
-# COOKIES_BROWSER=safari
-# COOKIES_BROWSER=opera
-```
+Los servidores no tienen navegadores instalados. La única solución es usar un archivo de cookies exportado.
 
-**Requisitos:**
-1. Tener el navegador instalado
-2. Estar autenticado en YouTube en ese navegador
-3. Reiniciar el bot
+#### **B) Bot en TU PC LOCAL**
+**→ Usa: Cookies del navegador**
 
-### **Opción 2: Archivo de Cookies Manual** (Avanzado)
-
-Si prefieres usar un archivo de cookies:
-
-1. Exporta cookies de YouTube usando una extensión del navegador
-2. Guarda el archivo como `cookies.txt`
-3. En `.env`:
-   ```env
-   YOUTUBE_COOKIES_FILE=/ruta/completa/a/cookies.txt
-   ```
+Si el bot corre en tu computadora personal, puede leer las cookies directamente de tu navegador.
 
 ---
 
-## 📝 Pasos Detallados
+## 🚀 Solución Recomendada: Archivo de Cookies
 
-### **Para Chrome (Recomendado):**
+**Esta es la solución universal que funciona en cualquier servidor.**
 
-1. **Verificar que estás autenticado en YouTube:**
-   - Abre Chrome
-   - Ve a https://youtube.com
-   - Verifica que estás logueado (deberías ver tu perfil)
+### Paso 1: Exportar Cookies (en tu PC local)
 
-2. **Configurar el bot:**
-   ```env
-   # En .env
-   COOKIES_BROWSER=chrome
-   ```
+Tenemos un script automático que hace todo por ti:
 
-3. **Reiniciar el bot:**
+```bash
+# En tu PC local (NO en el servidor)
+python scripts/export_cookies.py chrome
+```
+
+**Navegadores soportados:**
+- `chrome` - Google Chrome
+- `firefox` - Mozilla Firefox
+- `edge` - Microsoft Edge
+- `brave` - Brave Browser
+- `opera` - Opera
+
+**Requisitos previos:**
+1. Instalar la dependencia:
    ```bash
-   # Detener el bot (Ctrl+C)
-   python -m src.bot
+   pip install browser-cookie3
    ```
 
-4. **Verificar en logs:**
-   Deberías ver:
-   ```
-   ✅ Configured to use cookies from chrome
-   ```
+2. Estar autenticado en YouTube en ese navegador
 
-### **Para Firefox:**
+El script generará un archivo `cookies.txt` en el directorio actual.
 
-1. Autenticado en YouTube en Firefox
-2. En `.env`:
-   ```env
-   COOKIES_BROWSER=firefox
-   ```
-3. Reiniciar bot
+### Paso 2: Subir el archivo a tu servidor
 
-### **Para Edge:**
+**Opción A: Usando Secret Files (RECOMENDADO - más seguro)**
 
-1. Autenticado en YouTube en Edge
-2. En `.env`:
-   ```env
-   COOKIES_BROWSER=edge
-   ```
-3. Reiniciar bot
+**Para Railway:**
+1. Ve a tu proyecto en Railway
+2. Variables → Add Variable
+3. Key: `YOUTUBE_COOKIES_FILE`
+4. Value: `/app/cookies.txt`
+5. Luego ve a "Secret Files" y pega el contenido de cookies.txt
+
+**Para Render:**
+1. Ve a tu servicio en Render
+2. Environment → Secret Files
+3. Filename: `cookies.txt`
+4. Contents: [pega el contenido completo de tu archivo cookies.txt]
+5. Add Variable:
+   - Key: `YOUTUBE_COOKIES_FILE`
+   - Value: `/etc/secrets/cookies.txt`
+
+**Opción B: Subir al repositorio (solo si es privado)**
+```bash
+# En tu PC local
+# 1. Copia el archivo al proyecto
+cp cookies.txt /ruta/a/Bot-Discord/
+
+# 2. Añade a .env (o configura en tu plataforma)
+echo "YOUTUBE_COOKIES_FILE=/app/cookies.txt" >> .env
+
+# 3. Sube al repositorio (SOLO si es privado)
+git add cookies.txt
+git commit -m "Add YouTube cookies"
+git push
+```
+
+**⚠️ IMPORTANTE:** Las cookies son sensibles. Si tu repositorio es **público**, usa Secret Files de tu plataforma.
+
+### Paso 3: Configurar en tu .env
+
+Añade esta línea a tu archivo `.env`:
+
+```env
+YOUTUBE_COOKIES_FILE=/app/cookies.txt
+```
+
+**Nota:** La ruta cambia según tu plataforma:
+- Railway: `/app/cookies.txt`
+- Render (con Secret Files): `/etc/secrets/cookies.txt`
+- Docker: `/app/cookies.txt`
+- VPS: La ruta donde subas el archivo
+
+### Paso 4: Reiniciar el bot
+
+Después de configurar, reinicia tu bot. En los logs deberías ver:
+
+```
+✅ Usando cookies desde archivo: /app/cookies.txt
+```
 
 ---
 
-## 🔍 Verificación
+## 💻 Alternativa: Usar Cookies del Navegador (Solo PC Local)
 
-Después de configurar, el bot mostrará en los logs:
+**⚠️ ADVERTENCIA:** Esta opción **NO funciona en servidores**. Solo úsala si el bot corre en tu PC.
 
-```
-✅ Configured to use cookies from chrome
+### Paso 1: Configurar .env
+
+```env
+COOKIES_BROWSER=chrome
 ```
 
-O:
+### Paso 2: Verificar requisitos
+
+1. Tener Chrome instalado localmente
+2. Estar autenticado en YouTube en Chrome
+3. El bot debe correr en la misma PC
+
+### Paso 3: Reiniciar bot
+
+```bash
+python -m src.bot
 ```
-⚠️  No cookies configured - YouTube may block requests
-💡 Set COOKIES_BROWSER environment variable (chrome/firefox/edge)
+
+Deberías ver:
+```
+⚙️  Configurado para usar cookies de chrome
 ```
 
 ---
 
 ## 🐛 Troubleshooting
 
-### Problema: "Could not setup cookies from chrome"
+### ❌ Error: "could not find chrome cookies database"
 
-**Solución 1:** Verifica que Chrome está instalado
-```bash
-# Windows: Buscar en Archivos de Programa
-# Linux: which google-chrome
-# Mac: open -a "Google Chrome"
-```
+**Causa:** Estás usando `COOKIES_BROWSER=edge` pero el bot está en un servidor sin navegadores.
 
-**Solución 2:** Usa otro navegador
+**Solución:** Elimina `COOKIES_BROWSER` del .env y usa `YOUTUBE_COOKIES_FILE` con un archivo exportado.
+
 ```env
-COOKIES_BROWSER=firefox  # O edge, brave, etc.
+# ❌ NO hagas esto en servidores:
+COOKIES_BROWSER=edge
+
+# ✅ HAZ esto en servidores:
+YOUTUBE_COOKIES_FILE=/app/cookies.txt
 ```
-
-**Solución 3:** Instala la versión más reciente de yt-dlp
-```bash
-pip install --upgrade yt-dlp
-```
-
-### Problema: "No cookies configured"
-
-El bot intentará automáticamente varios navegadores. Si todos fallan:
-
-1. **Instala y configura Chrome/Firefox**
-2. **Asegúrate de estar autenticado en YouTube**
-3. **Reinicia el bot**
-
-### Problema: Sigue sin funcionar
-
-**Opción manual con archivo de cookies:**
-
-1. **Instala extensión del navegador:**
-   - Chrome: "Get cookies.txt" (buscar en Chrome Web Store)
-   - Firefox: "cookies.txt" extension
-
-2. **Exporta cookies de YouTube:**
-   - Ve a youtube.com
-   - Usa la extensión para exportar
-   - Guarda como `cookies.txt`
-
-3. **Configura en .env:**
-   ```env
-   YOUTUBE_COOKIES_FILE=/ruta/completa/a/cookies.txt
-   ```
-
-4. **Reinicia el bot**
 
 ---
 
-## 📊 Prioridad de Configuración
+### ❌ Error: "NO HAY COOKIES CONFIGURADAS"
+
+El bot mostrará un mensaje de error largo explicando qué hacer.
+
+**Solución rápida:**
+1. Ejecuta en tu PC: `python scripts/export_cookies.py chrome`
+2. Sube el `cookies.txt` generado a tu servidor
+3. Configura `YOUTUBE_COOKIES_FILE=/app/cookies.txt`
+4. Reinicia el bot
+
+---
+
+### ❌ Error al exportar cookies: "browser_cookie3 not found"
+
+**Solución:**
+```bash
+pip install browser-cookie3
+```
+
+---
+
+### ❌ Script de exportación falla
+
+**Método alternativo manual:**
+
+1. **Instala una extensión del navegador:**
+
+   **Para Chrome/Edge/Brave:**
+   - Busca "Get cookies.txt" en Chrome Web Store
+   - O usa "EditThisCookie"
+
+   **Para Firefox:**
+   - Busca "cookies.txt" en Firefox Add-ons
+
+2. **Exporta las cookies:**
+   - Ve a https://youtube.com
+   - Asegúrate de estar autenticado
+   - Haz clic en la extensión
+   - Exporta en formato "Netscape" o "cookies.txt"
+   - Guarda el archivo
+
+3. **Sube el archivo a tu servidor** (ver Paso 2 arriba)
+
+---
+
+## 📊 Orden de Prioridad del Bot
 
 El bot intenta en este orden:
 
-1. ✅ **YOUTUBE_COOKIES_FILE** (si está configurado)
-2. ✅ **COOKIES_BROWSER** (navegador especificado)
-3. ✅ **Auto-detección** (prueba chrome, firefox, edge, brave, opera, safari)
-4. ⚠️ **Sin cookies** (puede fallar)
+1. ✅ **YOUTUBE_COOKIES_FILE** - Archivo de cookies (RECOMENDADO para servidores)
+2. ✅ **COOKIES_BROWSER** - Cookies del navegador (solo PC local)
+3. ❌ **Sin cookies** - Mostrará error y guía de solución
 
 ---
 
-## 💡 Recomendaciones
+## 💡 Recomendaciones por Caso de Uso
 
-### Para Desarrollo Local:
+### 🖥️ Para Desarrollo Local (bot en tu PC):
+
 ```env
+# Opción 1: Archivo (más confiable)
+YOUTUBE_COOKIES_FILE=cookies.txt
+
+# Opción 2: Navegador (más fácil)
 COOKIES_BROWSER=chrome
 ```
-- Más fácil
-- No requiere archivos adicionales
-- Se actualiza automáticamente
 
-### Para Deployment (Railway/Render):
+**Pros de archivo:**
+- ✅ Más confiable
+- ✅ No depende del navegador
+- ✅ Funciona incluso si cierras el navegador
+
+**Pros de navegador:**
+- ✅ Más fácil de configurar
+- ✅ No requiere archivos adicionales
+- ✅ Se actualiza si re-autentícas en YouTube
+
+### 🌐 Para Servidores (Railway/Render/Docker/VPS):
+
 ```env
 YOUTUBE_COOKIES_FILE=/app/cookies.txt
 ```
-- Más confiable en servidores
-- Requiere subir archivo cookies.txt
-- No depende de navegador instalado
+
+**Única opción válida para servidores:**
+- ✅ No depende de navegadores instalados
+- ✅ Portátil entre servidores
+- ✅ Funciona en contenedores Docker
+- ❌ Requiere exportar manualmente
 
 ---
 
 ## 🔐 Seguridad
 
-**Las cookies son sensibles - NO las compartas:**
-- ❌ No subas `cookies.txt` a GitHub
-- ❌ No compartas tu archivo de cookies
-- ✅ Usa `.gitignore` para excluir cookies.txt
-- ✅ Usa variables de entorno en deployment
+**⚠️ Las cookies son credenciales sensibles:**
 
-El `.gitignore` ya incluye:
+### ❌ NO hagas esto:
+- Subir cookies.txt a GitHub público
+- Compartir tu archivo de cookies
+- Commitear cookies sin .gitignore
+
+### ✅ SÍ haz esto:
+- Usar Secret Files de tu plataforma (Railway/Render)
+- Añadir cookies.txt a .gitignore
+- Regenerar cookies si las expones accidentalmente
+
+**El .gitignore ya incluye:**
 ```gitignore
 cookies.txt
-*.txt
+*.cookies
 ```
 
 ---
 
-## 🚀 Deployment en Railway/Render
+## 📋 Checklist Rápido
 
-### Método 1: Cookies del Navegador (NO funciona en servidores)
+**Si tu bot está en un SERVIDOR:**
 
-Los servidores no tienen navegadores instalados. Necesitas usar archivo de cookies.
+- [ ] Ejecuté `python scripts/export_cookies.py chrome` en mi PC
+- [ ] Tengo el archivo `cookies.txt` generado
+- [ ] Subí el archivo a Secret Files de mi plataforma
+- [ ] Configuré `YOUTUBE_COOKIES_FILE=/app/cookies.txt` en .env
+- [ ] Reinicié el bot
+- [ ] Vi "✅ Usando cookies desde archivo" en los logs
 
-### Método 2: Archivo de Cookies (RECOMENDADO)
+**Si mi bot está en MI PC:**
 
-1. **Exporta cookies localmente:**
-   - Usa extensión del navegador
-   - Guarda como `cookies.txt`
+- [ ] Estoy autenticado en YouTube en mi navegador
+- [ ] Configuré `COOKIES_BROWSER=chrome` (o mi navegador) en .env
+- [ ] Reinicié el bot
+- [ ] Vi "⚙️ Configurado para usar cookies de chrome" en los logs
 
-2. **Sube a tu repositorio:**
+---
+
+## 🎯 Resumen TL;DR
+
+**Tu error:**
+```
+ERROR: could not find chrome cookies database
+```
+
+**Tu problema:**
+- Configuraste `COOKIES_BROWSER=edge`
+- Pero el bot está en un servidor sin navegadores instalados
+- Los servidores NO tienen Chrome/Edge/Firefox
+
+**Solución en 3 pasos:**
+
+1. **En tu PC local:**
    ```bash
-   # IMPORTANTE: Asegúrate que cookies.txt está en .gitignore
-   # Solo súbelo de forma privada o usa secrets
+   python scripts/export_cookies.py chrome
+   # o usa el navegador donde estés autenticado en YouTube
    ```
 
-3. **O mejor - usa secrets del servicio:**
+2. **Sube cookies.txt a tu servidor** (Railway/Render/etc.)
 
-   **Railway:**
-   - Variables → Añadir variable multilinea
-   - Nombre: `YOUTUBE_COOKIES_CONTENT`
-   - Valor: [pega contenido de cookies.txt]
-
-   **Render:**
-   - Environment → Secret Files
-   - File: `cookies.txt`
-   - Content: [pega contenido]
-
-4. **Configura en .env:**
+3. **Configura en .env:**
    ```env
+   # Elimina esto:
+   # COOKIES_BROWSER=edge
+
+   # Añade esto:
    YOUTUBE_COOKIES_FILE=/app/cookies.txt
    ```
 
----
-
-## ✅ Solución Aplicada al Código
-
-He actualizado automáticamente:
-- ✅ `src/utils/youtube_handler.py` - Usa cookies automáticamente
-- ✅ `src/config/settings.py` - Variables de entorno para cookies
-- ✅ `.env.example` - Ejemplo de configuración
-
-**Cambios:**
-```python
-# Ahora el bot automáticamente:
-1. Busca YOUTUBE_COOKIES_FILE (archivo)
-2. Si no, usa COOKIES_BROWSER (chrome por defecto)
-3. Si no, intenta chrome, firefox, edge, brave, safari, opera
-4. Si nada funciona, advierte pero intenta continuar
-```
+4. **Reinicia** y listo ✅
 
 ---
 
-## 🎯 Resumen Ejecutivo
+## 📞 Ayuda Adicional
 
-**Para solucionar AHORA:**
+Si después de seguir esta guía sigues teniendo problemas:
 
-1. Añade a tu `.env`:
-   ```env
-   COOKIES_BROWSER=chrome
-   ```
+1. Verifica los logs del bot - te dirán exactamente qué falta
+2. Asegúrate de estar autenticado en YouTube cuando exportes cookies
+3. Verifica que la ruta del archivo sea correcta en tu plataforma
+4. Prueba actualizar yt-dlp: `pip install --upgrade yt-dlp`
 
-2. Asegúrate de estar autenticado en YouTube en Chrome
-
-3. Reinicia el bot:
-   ```bash
-   python -m src.bot
-   ```
-
-4. Verifica logs:
-   ```
-   ✅ Configured to use cookies from chrome
-   ```
-
-5. ¡Listo! Ahora funcionará.
-
----
-
-## 📞 Soporte
-
-Si sigue sin funcionar:
-1. Verifica que estás autenticado en YouTube en tu navegador
-2. Prueba con otro navegador (Firefox, Edge)
-3. Actualiza yt-dlp: `pip install --upgrade yt-dlp`
-4. Usa método manual con cookies.txt
-
-**El bot ahora manejará esto automáticamente en la mayoría de casos.**
+**El bot te guiará con mensajes de error claros si algo falta.**

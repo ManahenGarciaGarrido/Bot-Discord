@@ -59,41 +59,59 @@ class YouTubeHandler:
     def _setup_cookies(self) -> dict:
         """
         Configurar cookies para evitar bloqueos de YouTube
-        Intenta usar cookies del navegador automáticamente
+
+        IMPORTANTE: Para servidores de producción, usa YOUTUBE_COOKIES_FILE
+        Las cookies del navegador solo funcionan si el bot corre en tu PC local.
         """
         cookies_opts = {}
 
-        # Prioridad 1: Variable de entorno con path a archivo de cookies
+        # Prioridad 1: Archivo de cookies (RECOMENDADO PARA SERVIDORES)
         cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
-        if cookies_file and os.path.exists(cookies_file):
-            logger.info(f'Using cookies from file: {cookies_file}')
-            cookies_opts['cookiefile'] = cookies_file
-            return cookies_opts
-
-        # Prioridad 2: Usar cookies del navegador automáticamente
-        browser = os.getenv('COOKIES_BROWSER', 'chrome')  # chrome, firefox, edge, safari, etc.
-
-        try:
-            # Intentar con el navegador especificado
-            cookies_opts['cookiesfrombrowser'] = (browser,)
-            logger.info(f'✅ Configured to use cookies from {browser}')
-            return cookies_opts
-        except Exception as e:
-            logger.warning(f'Could not setup cookies from {browser}: {e}')
-
-        # Prioridad 3: Intentar con navegadores comunes
-        browsers = ['chrome', 'firefox', 'edge', 'brave', 'opera', 'safari']
-        for browser_name in browsers:
-            try:
-                cookies_opts['cookiesfrombrowser'] = (browser_name,)
-                logger.info(f'✅ Configured to use cookies from {browser_name}')
+        if cookies_file:
+            if os.path.exists(cookies_file):
+                logger.info(f'✅ Usando cookies desde archivo: {cookies_file}')
+                cookies_opts['cookiefile'] = cookies_file
                 return cookies_opts
-            except:
-                continue
+            else:
+                logger.error(f'❌ Archivo de cookies no encontrado: {cookies_file}')
+                logger.error(f'💡 Genera el archivo con: python scripts/export_cookies.py')
+                # Continuar intentando otras opciones
 
-        # Si no se pudo configurar cookies, advertir
-        logger.warning('⚠️  No cookies configured - YouTube may block requests')
-        logger.warning('💡 Set COOKIES_BROWSER environment variable (chrome/firefox/edge)')
+        # Prioridad 2: Cookies del navegador (SOLO FUNCIONA EN PC LOCAL)
+        browser = os.getenv('COOKIES_BROWSER')
+        if browser:
+            logger.info(f'🔍 Intentando usar cookies de {browser}...')
+            # Verificar que estamos en un entorno con navegador instalado
+            if not os.path.exists(os.path.expanduser('~')):
+                logger.error('❌ No se detectó directorio home - probablemente estás en un servidor')
+                logger.error('💡 SOLUCIÓN: Usa YOUTUBE_COOKIES_FILE en vez de COOKIES_BROWSER')
+            else:
+                try:
+                    # Intentar configurar cookies del navegador
+                    cookies_opts['cookiesfrombrowser'] = (browser,)
+                    logger.info(f'⚙️  Configurado para usar cookies de {browser}')
+                    # Nota: yt-dlp validará esto cuando se use
+                    return cookies_opts
+                except Exception as e:
+                    logger.error(f'❌ Error configurando cookies de {browser}: {e}')
+
+        # Si llegamos aquí, no hay cookies configuradas
+        logger.error('=' * 70)
+        logger.error('❌ NO HAY COOKIES CONFIGURADAS - YOUTUBE BLOQUEARÁ LAS PETICIONES')
+        logger.error('=' * 70)
+        logger.error('')
+        logger.error('📋 SOLUCIÓN RECOMENDADA (para servidores):')
+        logger.error('   1. Ejecuta: python scripts/export_cookies.py')
+        logger.error('   2. Sube el archivo cookies.txt a tu servidor')
+        logger.error('   3. Añade a .env: YOUTUBE_COOKIES_FILE=/path/to/cookies.txt')
+        logger.error('')
+        logger.error('💻 Alternativa (solo para PC local):')
+        logger.error('   1. Asegúrate de tener Chrome/Edge/Firefox instalado')
+        logger.error('   2. Inicia sesión en youtube.com en ese navegador')
+        logger.error('   3. Añade a .env: COOKIES_BROWSER=chrome')
+        logger.error('')
+        logger.error('=' * 70)
+
         return cookies_opts
 
     async def extract_info(self, url: str) -> Optional[Dict]:
