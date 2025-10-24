@@ -6,6 +6,7 @@ import yt_dlp
 import asyncio
 from typing import Dict, List, Optional
 import logging
+import os
 
 
 logger = logging.getLogger('MusicBot.YouTube')
@@ -19,7 +20,8 @@ class YouTubeHandler:
 
     def __init__(self):
         """Inicializar el handler con opciones de yt-dlp"""
-        self.ydl_opts = {
+        # Configuración base de yt-dlp
+        base_opts = {
             'format': 'bestaudio/best',
             'noplaylist': False,  # Permitir playlists
             'quiet': True,
@@ -30,6 +32,12 @@ class YouTubeHandler:
             'age_limit': None,
         }
 
+        # Configurar cookies para evitar bloqueos de YouTube
+        cookies_config = self._setup_cookies()
+        base_opts.update(cookies_config)
+
+        self.ydl_opts = base_opts
+
         # Opciones específicas para búsqueda
         self.search_opts = {
             **self.ydl_opts,
@@ -38,13 +46,55 @@ class YouTubeHandler:
         }
 
         # Opciones para obtener stream URL
-        self.stream_opts = {
+        stream_opts_base = {
             'format': 'bestaudio/best',
             'quiet': True,
             'no_warnings': True,
             'extract_flat': False,
             'source_address': '0.0.0.0',
         }
+        stream_opts_base.update(cookies_config)
+        self.stream_opts = stream_opts_base
+
+    def _setup_cookies(self) -> dict:
+        """
+        Configurar cookies para evitar bloqueos de YouTube
+        Intenta usar cookies del navegador automáticamente
+        """
+        cookies_opts = {}
+
+        # Prioridad 1: Variable de entorno con path a archivo de cookies
+        cookies_file = os.getenv('YOUTUBE_COOKIES_FILE')
+        if cookies_file and os.path.exists(cookies_file):
+            logger.info(f'Using cookies from file: {cookies_file}')
+            cookies_opts['cookiefile'] = cookies_file
+            return cookies_opts
+
+        # Prioridad 2: Usar cookies del navegador automáticamente
+        browser = os.getenv('COOKIES_BROWSER', 'chrome')  # chrome, firefox, edge, safari, etc.
+
+        try:
+            # Intentar con el navegador especificado
+            cookies_opts['cookiesfrombrowser'] = (browser,)
+            logger.info(f'✅ Configured to use cookies from {browser}')
+            return cookies_opts
+        except Exception as e:
+            logger.warning(f'Could not setup cookies from {browser}: {e}')
+
+        # Prioridad 3: Intentar con navegadores comunes
+        browsers = ['chrome', 'firefox', 'edge', 'brave', 'opera', 'safari']
+        for browser_name in browsers:
+            try:
+                cookies_opts['cookiesfrombrowser'] = (browser_name,)
+                logger.info(f'✅ Configured to use cookies from {browser_name}')
+                return cookies_opts
+            except:
+                continue
+
+        # Si no se pudo configurar cookies, advertir
+        logger.warning('⚠️  No cookies configured - YouTube may block requests')
+        logger.warning('💡 Set COOKIES_BROWSER environment variable (chrome/firefox/edge)')
+        return cookies_opts
 
     async def extract_info(self, url: str) -> Optional[Dict]:
         """
