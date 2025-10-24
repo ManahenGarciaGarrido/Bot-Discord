@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: discord-music-bot
+    env: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python -m src.bot
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: DISCORD_TOKEN
+        sync: false
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: PREFIX
+        value: "!"
+      - key: DEFAULT_VOLUME
+        value: "50"
+      - key: MAX_QUEUE_SIZE
+        value: "100"
+      - key: LOG_LEVEL
+        value: INFO
