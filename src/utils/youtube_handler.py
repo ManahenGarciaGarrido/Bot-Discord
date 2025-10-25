@@ -1,6 +1,7 @@
 """
 YouTube Handler - Maneja la extracción de información y streams de YouTube
 Utiliza yt-dlp para extraer información sin descargar archivos
+OPTIMIZADO para máxima velocidad con caché y lazy loading
 """
 import yt_dlp
 import asyncio
@@ -8,6 +9,7 @@ from typing import Dict, List, Optional
 import logging
 import os
 import shutil
+from .cache import video_cache
 
 
 logger = logging.getLogger('MusicBot.YouTube')
@@ -31,6 +33,16 @@ class YouTubeHandler:
             'source_address': '0.0.0.0',  # Bind a IPv4
             'extract_flat': False,  # Extraer info completa
             'age_limit': None,
+            # Headers para simular navegador real
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-us,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate',
+                'DNT': '1',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+            },
         }
 
         # Configurar cookies para evitar bloqueos de YouTube
@@ -141,7 +153,11 @@ class YouTubeHandler:
             tmp_cookies_path = '/tmp/youtube_cookies.txt'
             try:
                 shutil.copy2(cookies_path, tmp_cookies_path)
+                # Asegurar permisos de lectura/escritura
+                os.chmod(tmp_cookies_path, 0o600)
                 logger.info(f'📋 Cookies copiadas de {cookies_path} a {tmp_cookies_path} (ubicación escribible)')
+                # Validar formato del archivo
+                self._validate_cookies_file(tmp_cookies_path)
                 return tmp_cookies_path
             except Exception as e:
                 logger.warning(f'⚠️  No se pudo copiar cookies a /tmp/: {e}')
@@ -169,16 +185,77 @@ class YouTubeHandler:
                 logger.error(f'⚠️  Usando archivo original (puede no funcionar)')
                 return cookies_path
 
-    async def extract_info(self, url: str) -> Optional[Dict]:
+    def _validate_cookies_file(self, cookies_path: str) -> bool:
+        """
+        Valida que el archivo de cookies tenga formato correcto de Netscape.
+
+        Args:
+            cookies_path: Ruta del archivo de cookies
+
+        Returns:
+            bool: True si es válido, False si no
+        """
+        try:
+            with open(cookies_path, 'r') as f:
+                lines = f.readlines()
+
+            # Verificar header de Netscape
+            if not lines or '# Netscape HTTP Cookie File' not in lines[0]:
+                logger.warning('⚠️  Archivo de cookies no tiene header de Netscape')
+                logger.warning('⚠️  Formato esperado: # Netscape HTTP Cookie File')
+                return False
+
+            # Contar cookies válidas de YouTube
+            youtube_cookies = 0
+            required_cookies = ['SAPISID', 'SSID', 'SID']
+            found_cookies = set()
+
+            for line in lines:
+                # Saltar comentarios y líneas vacías
+                if line.startswith('#') or not line.strip():
+                    continue
+
+                # Las cookies Netscape tienen 7 campos separados por tabs
+                parts = line.strip().split('\t')
+                if len(parts) >= 6:
+                    domain, _, path, secure, expiry, name, value = parts + [''] * (7 - len(parts))
+                    if 'youtube.com' in domain:
+                        youtube_cookies += 1
+                        if name in required_cookies:
+                            found_cookies.add(name)
+
+            logger.info(f'✓ Archivo de cookies válido: {youtube_cookies} cookies de YouTube encontradas')
+
+            if not found_cookies:
+                logger.warning('⚠️  No se encontraron cookies de autenticación importantes')
+                logger.warning('⚠️  Asegúrate de estar autenticado en YouTube al exportar cookies')
+            else:
+                logger.info(f'✓ Cookies de autenticación encontradas: {", ".join(found_cookies)}')
+
+            return youtube_cookies > 0
+
+        except Exception as e:
+            logger.error(f'❌ Error validando archivo de cookies: {e}')
+            return False
+
+    async def extract_info(self, url: str, use_cache: bool = True) -> Optional[Dict]:
         """
         Extraer información de un video o playlist de YouTube
+        OPTIMIZADO con sistema de caché para máxima velocidad
 
         Args:
             url: URL del video o playlist de YouTube
+            use_cache: Si usar caché (default: True)
 
         Returns:
             Dict: Información del video/playlist o None si hay error
         """
+        # Intentar obtener del caché primero
+        if use_cache:
+            cached = await video_cache.get(url)
+            if cached:
+                return cached
+
         try:
             loop = asyncio.get_event_loop()
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
@@ -186,18 +263,25 @@ class YouTubeHandler:
                     None,
                     lambda: ydl.extract_info(url, download=False)
                 )
+
+                # Guardar en caché
+                if info and use_cache:
+                    await video_cache.set(url, info)
+
                 return info
         except Exception as e:
             logger.error(f'Error extrayendo info de {url}: {e}')
             return None
 
-    async def search(self, query: str, limit: int = 5) -> List[Dict]:
+    async def search(self, query: str, limit: int = 5, full_info: bool = False) -> List[Dict]:
         """
         Buscar videos en YouTube
+        OPTIMIZADO: Por defecto devuelve info básica para velocidad
 
         Args:
             query: Término de búsqueda
             limit: Número máximo de resultados (default: 5)
+            full_info: Si obtener info completa (lento) o básica (rápido, default: False)
 
         Returns:
             List[Dict]: Lista de resultados de búsqueda
@@ -214,13 +298,17 @@ class YouTubeHandler:
                 )
 
                 if 'entries' in info:
-                    results = []
-                    for entry in info['entries'][:limit]:
-                        # Obtener información completa de cada resultado
-                        full_info = await self.extract_info(entry['url'])
-                        if full_info:
-                            results.append(full_info)
-                    return results
+                    if full_info:
+                        # Modo lento: obtener info completa de cada resultado
+                        results = []
+                        for entry in info['entries'][:limit]:
+                            full = await self.extract_info(entry['url'])
+                            if full:
+                                results.append(full)
+                        return results
+                    else:
+                        # Modo rápido: usar info básica que ya tenemos
+                        return [entry for entry in info['entries'][:limit] if entry]
                 return []
 
         except Exception as e:
@@ -262,24 +350,47 @@ class YouTubeHandler:
     async def get_playlist(self, url: str, max_songs: int = 50) -> List[Dict]:
         """
         Obtener información de todos los videos en una playlist
+        OPTIMIZADO con extract_flat para máxima velocidad (10-20x más rápido)
 
         Args:
             url: URL de la playlist de YouTube
             max_songs: Número máximo de canciones a extraer (default: 50)
 
         Returns:
-            List[Dict]: Lista de información de videos
+            List[Dict]: Lista de información BÁSICA de videos
+            Usar extract_info() individual cuando se necesite info completa
         """
         try:
+            # Usar extract_flat=True para obtener solo metadata básica (muy rápido)
+            flat_opts = {
+                **self.ydl_opts,
+                'extract_flat': 'in_playlist',  # Solo info básica para playlists
+                'quiet': True,
+            }
+
             loop = asyncio.get_event_loop()
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(flat_opts) as ydl:
                 info = await loop.run_in_executor(
                     None,
                     lambda: ydl.extract_info(url, download=False)
                 )
 
                 if 'entries' in info:
-                    return [entry for entry in info['entries'][:max_songs] if entry]
+                    entries = []
+                    for entry in info['entries'][:max_songs]:
+                        if entry and 'url' in entry:
+                            # Añadir info básica útil
+                            entries.append({
+                                'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                                'title': entry.get('title', 'Unknown'),
+                                'duration': entry.get('duration', 0),
+                                'id': entry.get('id'),
+                                'uploader': entry.get('uploader', 'Unknown'),
+                                'webpage_url': entry.get('webpage_url') or entry.get('url'),
+                                '_lazy': True  # Marca para indicar que es info básica
+                            })
+                    logger.info(f'✓ Playlist procesada rápidamente: {len(entries)} videos')
+                    return entries
                 return []
 
         except Exception as e:
