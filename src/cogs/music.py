@@ -193,7 +193,8 @@ class Music(commands.Cog):
     async def _handle_spotify_url(self, url, requester):
         """
         Manejar URL de Spotify
-        OPTIMIZADO: Búsquedas en paralelo para máxima velocidad
+        OPTIMIZADO: Búsquedas en lotes controlados (evita bloqueo del bot)
+        Máximo 10 búsquedas simultáneas para no bloquear el event loop
         """
         if not self.spotify.is_available():
             logger.error('Spotify not available')
@@ -206,29 +207,41 @@ class Music(commands.Cog):
             if not tracks:
                 return None
 
-            # Convertir cada track a YouTube EN PARALELO (mucho más rápido)
-            async def search_track(track):
-                """Buscar un track en YouTube"""
-                try:
-                    query = self.spotify.to_youtube_query(track)
-                    results = await self.youtube.search(query, limit=1)
-                    if results:
-                        song = Song.from_youtube_info(results[0], requester)
-                        song.source = 'spotify'
-                        return song
-                except Exception as e:
-                    logger.error(f'Error searching track {track.get("name")}: {e}')
-                return None
+            # Limitar a máximo razonable
+            tracks_to_process = tracks[:min(len(tracks), Settings.MAX_QUEUE_SIZE)]
 
-            # Procesar TODAS las búsquedas en paralelo
-            logger.info(f'🔍 Buscando {len(tracks[:Settings.MAX_QUEUE_SIZE])} tracks en paralelo...')
-            tasks = [search_track(track) for track in tracks[:Settings.MAX_QUEUE_SIZE]]
+            # Semáforo para limitar concurrencia (máximo 10 búsquedas simultáneas)
+            semaphore = asyncio.Semaphore(10)
+
+            async def search_track_limited(track):
+                """Buscar un track con límite de concurrencia y timeout"""
+                async with semaphore:
+                    try:
+                        query = self.spotify.to_youtube_query(track)
+                        # Timeout de 10 segundos por búsqueda
+                        results = await asyncio.wait_for(
+                            self.youtube.search(query, limit=1),
+                            timeout=10.0
+                        )
+                        if results:
+                            song = Song.from_youtube_info(results[0], requester)
+                            song.source = 'spotify'
+                            return song
+                    except asyncio.TimeoutError:
+                        logger.warning(f'⏱️  Timeout buscando: {track.get("name", "Unknown")}')
+                    except Exception as e:
+                        logger.error(f'❌ Error searching track {track.get("name")}: {e}')
+                    return None
+
+            # Procesar con control de concurrencia
+            logger.info(f'🔍 Buscando {len(tracks_to_process)} tracks (máx 10 simultáneos)...')
+            tasks = [search_track_limited(track) for track in tracks_to_process]
             results = await asyncio.gather(*tasks, return_exceptions=True)
 
-            # Filtrar Nones y excepciones
+            # Filtrar resultados válidos
             songs = [r for r in results if isinstance(r, Song)]
 
-            logger.info(f'✓ Encontradas {len(songs)}/{len(tracks[:Settings.MAX_QUEUE_SIZE])} canciones de Spotify')
+            logger.info(f'✓ Encontradas {len(songs)}/{len(tracks_to_process)} canciones de Spotify')
             return songs if songs else None
 
         except Exception as e:
