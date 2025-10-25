@@ -1,6 +1,7 @@
 """
 YouTube Handler - Maneja la extracción de información y streams de YouTube
 Utiliza yt-dlp para extraer información sin descargar archivos
+OPTIMIZADO para máxima velocidad con caché y lazy loading
 """
 import yt_dlp
 import asyncio
@@ -8,6 +9,7 @@ from typing import Dict, List, Optional
 import logging
 import os
 import shutil
+from .cache import video_cache
 
 
 logger = logging.getLogger('MusicBot.YouTube')
@@ -236,16 +238,24 @@ class YouTubeHandler:
             logger.error(f'❌ Error validando archivo de cookies: {e}')
             return False
 
-    async def extract_info(self, url: str) -> Optional[Dict]:
+    async def extract_info(self, url: str, use_cache: bool = True) -> Optional[Dict]:
         """
         Extraer información de un video o playlist de YouTube
+        OPTIMIZADO con sistema de caché para máxima velocidad
 
         Args:
             url: URL del video o playlist de YouTube
+            use_cache: Si usar caché (default: True)
 
         Returns:
             Dict: Información del video/playlist o None si hay error
         """
+        # Intentar obtener del caché primero
+        if use_cache:
+            cached = await video_cache.get(url)
+            if cached:
+                return cached
+
         try:
             loop = asyncio.get_event_loop()
             with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
@@ -253,18 +263,25 @@ class YouTubeHandler:
                     None,
                     lambda: ydl.extract_info(url, download=False)
                 )
+
+                # Guardar en caché
+                if info and use_cache:
+                    await video_cache.set(url, info)
+
                 return info
         except Exception as e:
             logger.error(f'Error extrayendo info de {url}: {e}')
             return None
 
-    async def search(self, query: str, limit: int = 5) -> List[Dict]:
+    async def search(self, query: str, limit: int = 5, full_info: bool = False) -> List[Dict]:
         """
         Buscar videos en YouTube
+        OPTIMIZADO: Por defecto devuelve info básica para velocidad
 
         Args:
             query: Término de búsqueda
             limit: Número máximo de resultados (default: 5)
+            full_info: Si obtener info completa (lento) o básica (rápido, default: False)
 
         Returns:
             List[Dict]: Lista de resultados de búsqueda
@@ -281,13 +298,17 @@ class YouTubeHandler:
                 )
 
                 if 'entries' in info:
-                    results = []
-                    for entry in info['entries'][:limit]:
-                        # Obtener información completa de cada resultado
-                        full_info = await self.extract_info(entry['url'])
-                        if full_info:
-                            results.append(full_info)
-                    return results
+                    if full_info:
+                        # Modo lento: obtener info completa de cada resultado
+                        results = []
+                        for entry in info['entries'][:limit]:
+                            full = await self.extract_info(entry['url'])
+                            if full:
+                                results.append(full)
+                        return results
+                    else:
+                        # Modo rápido: usar info básica que ya tenemos
+                        return [entry for entry in info['entries'][:limit] if entry]
                 return []
 
         except Exception as e:
@@ -329,24 +350,47 @@ class YouTubeHandler:
     async def get_playlist(self, url: str, max_songs: int = 50) -> List[Dict]:
         """
         Obtener información de todos los videos en una playlist
+        OPTIMIZADO con extract_flat para máxima velocidad (10-20x más rápido)
 
         Args:
             url: URL de la playlist de YouTube
             max_songs: Número máximo de canciones a extraer (default: 50)
 
         Returns:
-            List[Dict]: Lista de información de videos
+            List[Dict]: Lista de información BÁSICA de videos
+            Usar extract_info() individual cuando se necesite info completa
         """
         try:
+            # Usar extract_flat=True para obtener solo metadata básica (muy rápido)
+            flat_opts = {
+                **self.ydl_opts,
+                'extract_flat': 'in_playlist',  # Solo info básica para playlists
+                'quiet': True,
+            }
+
             loop = asyncio.get_event_loop()
-            with yt_dlp.YoutubeDL(self.ydl_opts) as ydl:
+            with yt_dlp.YoutubeDL(flat_opts) as ydl:
                 info = await loop.run_in_executor(
                     None,
                     lambda: ydl.extract_info(url, download=False)
                 )
 
                 if 'entries' in info:
-                    return [entry for entry in info['entries'][:max_songs] if entry]
+                    entries = []
+                    for entry in info['entries'][:max_songs]:
+                        if entry and 'url' in entry:
+                            # Añadir info básica útil
+                            entries.append({
+                                'url': entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}",
+                                'title': entry.get('title', 'Unknown'),
+                                'duration': entry.get('duration', 0),
+                                'id': entry.get('id'),
+                                'uploader': entry.get('uploader', 'Unknown'),
+                                'webpage_url': entry.get('webpage_url') or entry.get('url'),
+                                '_lazy': True  # Marca para indicar que es info básica
+                            })
+                    logger.info(f'✓ Playlist procesada rápidamente: {len(entries)} videos')
+                    return entries
                 return []
 
         except Exception as e:
